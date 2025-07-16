@@ -3,33 +3,56 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <bits/stdc++.h>
+#include <netdb.h>
+#include <map>
+
 using namespace std;
+
+string resolve_hostname(const char* hostname)
+{
+  struct addrinfo hints{}, *res;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  int status = getaddrinfo(hostname, nullptr, &hints, &res);
+  if(status != 0)
+  {
+    cerr << "getaddrinfo error: " << gai_strerror(status) << endl;
+    return "";
+  }
+
+  char ipstr[INET_ADDRSTRLEN];
+  struct sockaddr_in* ipv4 = (struct sockaddr_in*)res->ai_addr;
+  inet_ntop(AF_INET, &(ipv4->sin_addr), ipstr, sizeof(ipstr));
+
+  freeaddrinfo(res);
+  return string(ipstr);
+}
 
 int scan_ports(const char* ip_addr)
 {
+  string resolved_ip = resolve_hostname(ip_addr);
+  const char* const_ip_addr = resolved_ip.c_str();
+
   struct sockaddr_in serv_addr;
   serv_addr.sin_family = AF_INET;
 
   // COnverting IPv4 from string to binary
-  const char* const_ip_addr = (const char*)ip_addr;
-  cout << "Converting the ip address" << endl;
-
+  //const char* const_ip_addr = (const char*)ip_addr;
   if (inet_pton(AF_INET, const_ip_addr, &serv_addr.sin_addr) <= 0) 
   {
     cerr << "Invalid address/ Address not supported" << endl;
     return -1;
   }
 
-  for(int i = 0; i <= 65535; i++)
-  {
-    //Dictionary for the most common ports
-    map<int, string> port_services = {
+  map<int, string> port_services = {
      {21, "FTP"}, {22, "SSH"}, {23, "Telnet"},
      {25, "SMTP"}, {53, "DNS"}, {80, "HTTP"},
      {110, "POP3"}, {143, "IMAP"}, {443, "HTTPS"},
      {3306, "MySQL"}, {8080, "HTTP (Alt)"}}; 
 
+  for(int i = 0; i <= 65535; i++)
+  {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock < 0)
     {
@@ -82,7 +105,7 @@ int scan_ports(const char* ip_addr)
 int main()
 {
   string ip_addr;
-  cout << "Enter the IP address to scan: ";
+  cout << "Enter the hostname/IP address to scan: ";
   cin >> ip_addr;
   
   scan_ports(ip_addr.c_str());

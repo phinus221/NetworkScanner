@@ -10,6 +10,11 @@ using namespace std;
 
 string resolve_hostname(const char* hostname)
 {
+  if (inet_pton(AF_INET, hostname, &addr) == 1)
+  {
+    return string(hostname);
+  }
+
   struct addrinfo hints{}, *res;
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -31,6 +36,8 @@ string resolve_hostname(const char* hostname)
 
 int scan_ports(const char* ip_addr)
 {
+  
+
   string resolved_ip = resolve_hostname(ip_addr);
   const char* const_ip_addr = resolved_ip.c_str();
 
@@ -38,10 +45,9 @@ int scan_ports(const char* ip_addr)
   serv_addr.sin_family = AF_INET;
 
   // COnverting IPv4 from string to binary
-  //const char* const_ip_addr = (const char*)ip_addr;
   if (inet_pton(AF_INET, const_ip_addr, &serv_addr.sin_addr) <= 0) 
   {
-    cerr << "Invalid address/ Address not supported" << endl;
+    cerr << "Invalid address" << endl;
     return -1;
   }
 

@@ -5,11 +5,21 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <map>
+#include <fcntl.h>
+#include <errno.h>
 
 using namespace std;
 
+bool is_host_up(const string& ip_addr)
+{
+  string cmd = "ping -c 1 -w 1 " + ip_addr + " > /dev/null 2>&1";
+
+  return system(cmd.c_str()) == 0;
+}
+
 string resolve_hostname(const char* hostname)
 {
+  struct in_addr addr;
   if (inet_pton(AF_INET, hostname, &addr) == 1)
   {
     return string(hostname);
@@ -31,15 +41,23 @@ string resolve_hostname(const char* hostname)
   inet_ntop(AF_INET, &(ipv4->sin_addr), ipstr, sizeof(ipstr));
 
   freeaddrinfo(res);
+
   return string(ipstr);
 }
 
 int scan_ports(const char* ip_addr)
 {
-  
-
   string resolved_ip = resolve_hostname(ip_addr);
   const char* const_ip_addr = resolved_ip.c_str();
+
+  if(is_host_up(const_ip_addr) == true)
+  {
+    cout << "Host is up!" << endl;
+  }
+  else {
+    cout << "Host is down. Exiting..." << endl;
+    return 0;
+  }
 
   struct sockaddr_in serv_addr;
   serv_addr.sin_family = AF_INET;
@@ -57,7 +75,7 @@ int scan_ports(const char* ip_addr)
      {110, "POP3"}, {143, "IMAP"}, {443, "HTTPS"},
      {3306, "MySQL"}, {8080, "HTTP (Alt)"}}; 
 
-  for(int i = 0; i <= 65535; i++)
+  for(int i = 1; i <= 65535; i++)
   {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock < 0)
@@ -67,16 +85,49 @@ int scan_ports(const char* ip_addr)
     }
 
     serv_addr.sin_port = htons(i);
-    //cout << "Trying port " << i << endl;
 
-    if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) >= 0)
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+    int res = connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    if(res < 0 && errno != EINPROGRESS)
     {
+      close(sock);
+      continue;
+    }
+
+    fd_set wait_set;
+    FD_ZERO(&wait_set);
+    FD_SET(sock, &wait_set);
+    struct timeval select_timeout;
+    select_timeout.tv_sec = 1;
+    select_timeout.tv_usec = 0;
+
+    res = select(sock + 1, nullptr, &wait_set, nullptr, &select_timeout);
+    if(res <= 0)
+    {
+      close(sock);
+      continue;
+    }
+    else 
+    {
+      int so_error;
+      socklen_t len = sizeof(so_error);
+      getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+      if(so_error != 0)
+      {
+        close(sock);
+        continue;
+      }
+
+      fcntl(sock, F_SETFL, flags);
+
       cout << "Port " << i << " is open." << endl;
       
       for(auto& port_number : port_services)
       {
         if(i == port_number.first)
-          cout << port_number.second << endl;
+        cout << port_number.second << endl;
       }
 
       if(i == 80 || i == 8080)
@@ -86,10 +137,10 @@ int scan_ports(const char* ip_addr)
       }
       
       // Setting a timeout so we dont hang on recv()
-      struct timeval timeout;
-      timeout.tv_sec = 5;
-      timeout.tv_usec = 0;
-      setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+      struct timeval recv_timeout;
+      recv_timeout.tv_sec = 1;
+      recv_timeout.tv_usec = 0;
+      setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&recv_timeout, sizeof(recv_timeout));
 
       char buffer[100] = {0};
       int bytes = recv(sock, buffer, sizeof(buffer) - 1, 0);
@@ -98,13 +149,13 @@ int scan_ports(const char* ip_addr)
         buffer[bytes] = '\0';
         cout << buffer << endl;
       }
-      else {
+      else 
+      {
         cout << "No information on said port" << endl;
       }
     }
     close(sock);
   }
-
   return 0;
 }
 
